@@ -160,6 +160,7 @@ jobs:
         with:
           service: joy-energy-api
           source-url: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
+          source-connection-arn: ${{ secrets.AWS_CONNECTION_ARN }}
           access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
           cpu: 1
           memory: 2048
