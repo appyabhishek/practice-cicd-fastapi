@@ -159,6 +159,7 @@ jobs:
         uses: awslabs/amazon-app-runner-deploy@main
         with:
           service: joy-energy-api
+          repo: ${{ github.repository }}
           source-url: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
           source-connection-arn: ${{ secrets.AWS_CONNECTION_ARN }}
           access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
@@ -167,3 +168,5 @@ jobs:
           port: 8020
           region: ${{ secrets.AWS_REGION }}
           wait-for-service-update: true
+          branch: main
+          wait-for-service-stability: false
