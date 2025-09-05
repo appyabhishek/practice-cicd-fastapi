@@ -167,6 +167,7 @@ jobs:
           cpu: 1
           memory: 2048
           port: 8020
+          build-command: "poetry install && poetry run python -m src.main"
           region: ${{ secrets.AWS_REGION }}
           wait-for-service-update: true
           branch: main
