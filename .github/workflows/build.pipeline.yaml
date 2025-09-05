@@ -155,14 +155,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Create/Update App Runner Service
-        uses: aws-actions/aws-app-runner-deploy@v1
+      - name: Deploy to App Runner
+        uses: awslabs/amazon-app-runner-deploy@main
         with:
           service: joy-energy-api
-          image: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
+          source-url: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
           access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          runtime: python3
-          port: 8020
           cpu: 1
           memory: 2048
-          wait-for-service-stability: true
+          port: 8020
+          region: ${{ secrets.AWS_REGION }}
+          wait-for-service-update: true
