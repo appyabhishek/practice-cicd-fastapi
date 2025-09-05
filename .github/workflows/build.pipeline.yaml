@@ -109,21 +109,11 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
-        continue-on-error: true
-        with:
-          image-ref: ${{ env.docker_image_name }}
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Scan image and generate SARIF file
-        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.docker_image_name }}
           format: 'sarif'
           output: 'trivy-results.sarif'
+          ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
@@ -132,4 +122,3 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-          category: 'Trivy Scan'
