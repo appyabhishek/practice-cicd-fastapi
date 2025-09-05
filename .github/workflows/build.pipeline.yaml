@@ -126,22 +126,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # (Optional but recommended) Scan the pushed image; fail on HIGH/CRITICAL
+      # Security scan with Trivy
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.24.0   # pin instead of @master
+        uses: aquasecurity/trivy-action@v0.17.0  # Using a stable version
+        continue-on-error: true  # Don't fail the build yet, we'll analyze results
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
-          format: sarif
-          vuln-type: 'os,library'
+          format: 'table'  # More readable output for immediate feedback
+          exit-code: '0'   # Don't fail yet
           severity: 'CRITICAL,HIGH'
-          output: trivy-results.sarif
-          exit-code: '1'   # <-- fail the job if CRITICAL/HIGH are found (optional)
+          vuln-type: 'os,library'
 
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+      # Generate SARIF output for GitHub Security tab
+      - name: Run Trivy vulnerability scanner (SARIF)
+        uses: aquasecurity/trivy-action@v0.17.0
         with:
-          sarif_file: trivy-results.sarif
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          vuln-type: 'os,library'
+          exit-code: '1'  # Now we'll fail if there are critical/high vulnerabilities
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()  # Always upload results, even if Trivy found vulnerabilities
+        with:
+          sarif_file: 'trivy-results.sarif'
 
 
   deploy:
