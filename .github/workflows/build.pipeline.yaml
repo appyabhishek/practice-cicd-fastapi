@@ -142,3 +142,27 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+
+  deploy:
+    needs: containerization
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' # Only deploy on main branch
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Create/Update App Runner Service
+        uses: aws-actions/aws-app-runner-deploy@v1
+        with:
+          service: joy-energy-api
+          image: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
+          access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          runtime: python3
+          port: 8020
+          cpu: 1
+          memory: 2048
+          wait-for-service-stability: true
