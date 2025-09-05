@@ -155,15 +155,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Create ECR repository
+        run: |
+          aws ecr create-repository --repository-name ${{ env.docker_image_name }} --region ${{ secrets.AWS_REGION }} || true
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+      - name: Tag and push image to Amazon ECR
+        run: |
+          docker pull ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
+          docker tag ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.docker_image_name }}:${{ github.sha }}
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.docker_image_name }}:${{ github.sha }}
+
       - name: Deploy to App Runner
         uses: awslabs/amazon-app-runner-deploy@main
         with:
           service: joy-energy-api
-          image: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
+          image: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.docker_image_name }}:${{ github.sha }}
           access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
           runtime: PYTHON_3
           cpu: 1
-          memory: 2048
+          memory: "2 GB"
           port: 8020
           build-command: "poetry install"
           start-command: "poetry run python -m src.main"
