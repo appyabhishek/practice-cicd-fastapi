@@ -100,9 +100,7 @@ jobs:
 
   containerization:
     runs-on: ubuntu-latest
-    needs:
-      - testing
-      - linting
+    needs: [testing, linting]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -117,7 +115,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image to GHCR
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -128,25 +126,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # (Optional but recommended) Scan the pushed image; fail on HIGH/CRITICAL
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.24.0   # pin instead of @master
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
-          format: 'sarif'
-          vuln-type: 'library'
+          format: sarif
+          vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-          output: 'trivy-results.sarif'
+          output: trivy-results.sarif
+          exit-code: '1'   # <-- fail the job if CRITICAL/HIGH are found (optional)
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
+
 
   deploy:
     needs: containerization
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' # Only deploy on main branch
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -155,43 +156,40 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Create ECR repository
+      - name: Create (or ensure) ECR repository
         run: |
-          aws ecr create-repository --repository-name ${{ env.docker_image_name }} --region ${{ secrets.AWS_REGION }} || true
+          aws ecr create-repository \
+            --repository-name ${{ env.docker_image_name }} \
+            --region ${{ secrets.AWS_REGION }} || true
 
       - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
         id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Login to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Tag and push image to Amazon ECR
+      - name: Retag GHCR image -> ECR and push
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
           docker pull ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
-          docker tag ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }} ${{ steps.ecr-login.outputs.registry }}/${{ env.docker_image_name }}:${{ github.sha }}
-          docker push ${{ steps.ecr-login.outputs.registry }}/${{ env.docker_image_name }}:${{ github.sha }}
+          docker tag ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }} \
+            $ECR_REGISTRY/${{ env.docker_image_name }}:${{ github.sha }}
+          docker push $ECR_REGISTRY/${{ env.docker_image_name }}:${{ github.sha }}
 
-      - name: Deploy to App Runner
-        uses: awslabs/amazon-app-runner-deploy@main
+      - name: Deploy to App Runner (image from ECR)
+        uses: awslabs/amazon-app-runner-deploy@v1   # pin a release; avoid @main
         with:
           service: joy-energy-api
           image: ${{ steps.ecr-login.outputs.registry }}/${{ env.docker_image_name }}:${{ github.sha }}
-          access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          runtime: PYTHON_3
-          cpu: 1
-          memory: "2 GB"
-          port: 8020
-          build-command: "poetry install"
-          start-command: "poetry run python -m src.main"
+          access-role-arn: ${{ secrets.AWS_ROLE_ARN }}   # App Runner ECR access role (pre-created)
+          cpu: '1 vCPU'          # must be one of App Runner's accepted values
+          memory: '2 GB'         # likewise: '2 GB', '3 GB', '4 GB', etc.
+          port: 8020             # your container must actually listen on 8020
           region: ${{ secrets.AWS_REGION }}
           wait-for-service-stability-seconds: 300
