@@ -156,51 +156,70 @@ jobs:
 
 
   deploy:
+    name: Deploy to AWS App Runner
     needs: containerization
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'  # Only deploy on main branch
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REPOSITORY: ${{ env.docker_image_name }}
+
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Create (or ensure) ECR repository
+      - name: Create ECR repository if not exists
         run: |
+          aws ecr describe-repositories --repository-names ${ECR_REPOSITORY} || \
           aws ecr create-repository \
-            --repository-name ${{ env.docker_image_name }} \
-            --region ${{ secrets.AWS_REGION }} || true
+            --repository-name ${ECR_REPOSITORY} \
+            --image-tag-mutability MUTABLE
 
       - name: Login to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Login to GHCR
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Retag GHCR image -> ECR and push
+      - name: Copy image from GHCR to ECR
         env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
-          docker pull ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
-          docker tag ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }} \
-            $ECR_REGISTRY/${{ env.docker_image_name }}:${{ github.sha }}
-          docker push $ECR_REGISTRY/${{ env.docker_image_name }}:${{ github.sha }}
+          # Pull from GHCR
+          echo "Pulling image from GHCR..."
+          docker pull ${GHCR_IMAGE}
 
-      - name: Deploy to App Runner (image from ECR)
-        uses: awslabs/amazon-app-runner-deploy@v1   # pin a release; avoid @main
+          # Tag for ECR
+          echo "Tagging for ECR..."
+          docker tag ${GHCR_IMAGE} ${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ github.sha }}
+          docker tag ${GHCR_IMAGE} ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+
+          # Push to ECR
+          echo "Pushing to ECR..."
+          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ github.sha }}
+          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+
+      - name: Deploy to App Runner
+        uses: awslabs/amazon-app-runner-deploy@v1
         with:
           service: joy-energy-api
           image: ${{ steps.ecr-login.outputs.registry }}/${{ env.docker_image_name }}:${{ github.sha }}
-          access-role-arn: ${{ secrets.AWS_ROLE_ARN }}   # App Runner ECR access role (pre-created)
-          cpu: '1 vCPU'          # must be one of App Runner's accepted values
-          memory: '2 GB'         # likewise: '2 GB', '3 GB', '4 GB', etc.
-          port: 8020             # your container must actually listen on 8020
-          region: ${{ secrets.AWS_REGION }}
+          access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          runtime: PYTHON_3
+          cpu: '1 vCPU'
+          memory: '2 GB'
+          port: 8020
+          build-command: "poetry install"
+          start-command: "poetry run python -m src.main"
+          region: ${{ env.AWS_REGION }}
           wait-for-service-stability-seconds: 300
