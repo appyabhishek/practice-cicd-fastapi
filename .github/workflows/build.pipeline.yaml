@@ -19,6 +19,10 @@ env:
   poetry_version: 1.8.1
   poetry_home: "/opt/poetry"
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   testing:
     runs-on: ubuntu-latest
