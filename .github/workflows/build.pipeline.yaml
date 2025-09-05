@@ -159,16 +159,13 @@ jobs:
         uses: awslabs/amazon-app-runner-deploy@main
         with:
           service: joy-energy-api
-          repo: ${{ github.repository }}
-          source-url: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
-          source-connection-arn: ${{ secrets.AWS_CONNECTION_ARN }}
+          image: ghcr.io/${{ github.repository_owner }}/${{ env.docker_image_name }}:${{ github.sha }}
           access-role-arn: ${{ secrets.AWS_ROLE_ARN }}
           runtime: PYTHON_3
           cpu: 1
           memory: 2048
           port: 8020
-          build-command: "poetry install && poetry run python -m src.main"
+          build-command: "poetry install"
+          start-command: "poetry run python -m src.main"
           region: ${{ secrets.AWS_REGION }}
-          wait-for-service-update: true
-          branch: main
-          wait-for-service-stability: false
+          wait-for-service-stability-seconds: 300
